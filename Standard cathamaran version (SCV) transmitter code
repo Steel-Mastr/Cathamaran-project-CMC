@@ -1,0 +1,247 @@
+/*
+PIN  DESCRIPTION      ARDUINO PIN
+1    GND              GND
+2    VCC (3.5-12V)    VCC
+3    TX DATA          D2
+*/
+
+#include <VirtualWire.h>
+#include <BetterJoystick.h>
+#include <math.h>
+Joystick joystick(A0, A1, 5);
+
+/*      PROGRAMMA DI CONTROLLO DEL CATAMARANO CMC
+Il programma è stato scritto per controllareattivamente il catamarano per mezzo di un telecomando con i seguenti cablaggi:
+A0  -> joystick asse verticale
+A1  -> joystick asse orizzontale
+A2  -> motore destro positivo
+A3  -> motore destro negativo
+A4  -> motore sinistro positivo
+A5  -> motore sinistro negativo
+1/2 -> pulsanti trigger di sicura
+3   -> leva toggle di ON/OFF
+4   -> controllo dell'illuminazione
+5-7 -> funzioni da implementare
+8   -> spia dello stato del catamarano
+9   -> spia del blocco motori
+10  -> funzionalità da implementare
+11  -> spia del funzionamento del sistema di illuminazione
+E' STATA USATA LA LIBRERIA VIRTUAL WIRE PER IL CONTROLLO DEI MODULI 433Mhz
+*/
+/*il progetto CAD della barchetta si può trovare in:
+https://cad.onshape.com/documents/013e38ce2243420557d24712/w/e623aa441227df25dee0ced3/e/4a6ca740235c944ace40ccd5?renderMode=0&uiState=6670348d46649b6ccbc58887*/
+//Il link ad un tutorial su come costruire la barchetta è "https://shorturl.at/cvSyx"
+
+byte JoyX = 0;             //Joystick X
+byte JoyY = 0;             //Joystick Y
+byte taraX = 0;            //tara sull'asse X
+byte taraY = 0;            //tara sull'asse Y
+byte mag = 0;              //modulo del joy
+byte deg = 0;              //angolo del joy in gradi
+byte out = 0;              //numero da mandare all'output
+bool taratura;             //se il pulsante per la sicura è premuta
+bool Sic1 = HIGH;          //Sicura 1
+bool Sic2 = HIGH;          //Sicura 2
+bool pwr = LOW;            //interruttore ON/OFF
+bool lights = LOW;         //luci
+bool func1 = LOW;          //funzione Tara
+bool func2 = LOW;          //funzione TBI 2 (pin 6)
+bool func3 = LOW;          //funzione TBI 3 (pin 6)
+bool work = LOW;           //check funzionamento motori
+bool block = LOW;          //segnalatore blocco con sicure
+bool sic = LOW;            //sicura
+const int TX_DIO_Pin = A2;  //parte di Virtual Wire
+void setup() {
+  pinMode(1, INPUT);      //Sicura 1  OK
+  pinMode(2, INPUT);      //Sicura 2  OK
+  pinMode(3, INPUT);      //ON/OFF    OK
+  pinMode(4, INPUT);      //Luci
+  pinMode(5, INPUT);      //Tara
+  //pinMode(6, INPUT);    //TBI
+  //pinMode(7, INPUT);    //TBI
+  pinMode(8, OUTPUT);     //In funzione  OK
+  pinMode(9, OUTPUT);     //Blocco    OK
+  pinMode(10, OUTPUT);    //IDK
+  pinMode(11, OUTPUT);    //Segnalatore luci  OK
+  pinMode(A0, INPUT);     //Joy X
+  pinMode(A1, INPUT);     //Joy Y
+  pinMode(A2, OUTPUT);    //Porta di output
+  initialize_transmitter();//inizializzazione trasmettitore
+  //pinMode(A3, OUTPUT);  //OBSOLETO
+  Serial.begin(9600);     //configura monitor seriale su 9600 baud
+}
+
+void var_update () {     //controllo automatico delle variabili ed update
+  JoyX = analogRead(A0);
+  JoyY = analogRead(A1);
+  Sic1 = digitalRead(1);
+  Sic2 = digitalRead(2);
+  pwr = digitalRead(3);
+  lights = digitalRead(4);
+}
+
+void calculateJoy() {    //calcola le posizione ed angolo del joystick
+  int xPos = joystick.x();
+  int yPos = joystick.y();
+
+  int JoyX = joystick.x(0, 255); // maps from the default 0, 1023 to 0, 255
+  int JoyY = joystick.y(0, 255);
+
+  mag = joystick.magnitude();
+  mag = mag * 255;
+
+  taratura = joystick.isPressed();
+
+  int deltaX = JoyX - 512;
+  int deltaY = JoyY - 512;
+  double rad = atan2 (deltaY, deltaX);
+  deg = 2 * rad / 3,14159265358979323846;
+}
+
+/* DO NO EDIT BELOW */
+
+void initialize_transmitter() {
+  /* Initialises the DIO pin used to send data to the Tx module */
+  vw_set_tx_pin(TX_DIO_Pin);
+  /* Set the transmit logic level (LOW = transmit for this version of module)*/ 
+  vw_set_ptt_inverted(true); 
+  
+  /* Transmit at 2000 bits per second */
+  vw_setup(2000);    // Bits per sec
+}
+
+void transmit_integer(unsigned int Data) {
+  /* The transmit buffer that will hold the data to be 
+     transmitted. */
+  byte TxBuffer[2];
+  /* ...and store it as high and low bytes in the transmit 
+     buffer */
+  TxBuffer[0] = Data >> 8;
+  TxBuffer[1] = Data;
+  
+  /* Send the data (2 bytes) */
+  vw_send((byte *)TxBuffer, 2);
+  /* Wait until the data has been sent */
+  vw_wait_tx();
+}
+// CAN EDIT
+
+void signal() {              //accendi/spegni spie
+  digitalWrite(8, pwr);      //scrivi sul pin 8 il segnale della leva di ON/OFF
+  digitalWrite(11, lights);  //scrivi sul pin 11 l'output delle luci
+  digitalWrite(9, block);    //scrivi sul pin 9 l'esito del sistema di blocco
+}
+
+void check() {            //controllo condizioni motore
+  if (pwr == HIGH) {
+    if (Sic1 == LOW) {
+     sic = HIGH;
+   }
+   if (Sic2 = LOW) {
+     sic = HIGH;
+   }
+  }
+  if (pwr == LOW) {
+    sic = LOW;
+  }
+  work = !sic;
+}
+
+void tara() {
+  JoyX = analogRead(A0);
+  JoyY = analogRead(A1);
+  taraX = JoyX - 127;
+  taraY = JoyY - 127;
+}
+
+void correction() {   //correggi i valori del joystick
+  JoyX += taraX;
+  JoyY += taraY;
+}
+
+
+void encrypt() {
+  int REsto = 0;
+  REsto = mag % 2;
+  if (REsto == 0){
+    mag = mag / 2;
+  }
+  if (REsto != 0) {
+    mag = (mag / 2)-0,5;
+  }
+  //allinea output
+  out = 27;
+  transmit_integer(out);
+  delay(3);
+  //controlla conflitti e lavoro
+  if (mag = 128) {
+    mag -= 1;
+  }
+  if (mag = 0) {
+    mag += 1;
+  }
+  if (deg = 128) {
+    deg -= 1;
+  }
+  if (deg = 0) {
+    deg += 1;
+  }
+  //luci ed asse X
+  if(lights == HIGH) {
+    out = mag + 128;
+  }
+  else {
+    out = mag;
+  }
+  if (out == 27) {
+    out += 1;
+  }
+  if (work == LOW){
+    out = 256;
+  }
+  if (pwr == 0) {
+    out = 256;
+  }
+  transmit_integer(out);
+  delay(3);
+  //asse Y
+  out = deg;
+  if (work == LOW){
+    out = 256;
+  }
+  if (pwr == LOW) {
+    out = 256;
+  }
+  transmit_integer(out);
+  delay(3);
+}
+
+void send() {
+  encrypt();
+}
+
+void loop() {          //programma che agisce effettivamente
+  var_update();        //aggiorna le variabili globali
+  calculateJoy();      //calcola le variabili del joystick
+  check();             //esegui il controllo delle sicure
+  signal();            //accendi/spegni spie
+
+  if (work == LOW) {
+    mag = 0;
+  }
+  if (pwr == LOW) {
+    mag = 0;
+  }
+  if (work == HIGH) {
+    if (pwr == HIGH) {
+      //trasforma l'input del joystick in output da mandare ai motori
+    }
+  }
+  
+  if (taratura == HIGH) {
+    tara();
+  }
+  send();
+  delay(10);
+}
+//the code passed the CEC tests
